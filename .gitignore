@@ -134,3 +134,6 @@ token.pickle
 
 # VS Code
 .vscode/
+
+# Log files
+logs/*.txt
