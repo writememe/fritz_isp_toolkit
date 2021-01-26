@@ -7,28 +7,25 @@ via Gmail.
 You can use something else to send the Gmail notification.
 """
 # Import modules
-import os
-import sys
-from os import environ
-from fritzconnection import FritzConnection
-import pathlib as pl
-import datetime as dt
-import pickle
-import os.path
-from googleapiclient.discovery import build
-from google_auth_oauthlib.flow import InstalledAppFlow
-from google.auth.transport.requests import Request
-from email.mime.text import MIMEText
-from email.mime.multipart import MIMEMultipart
 import base64
+import datetime as dt
 import mimetypes
-from email.mime.base import MIMEBase
+import os
+import os.path
+import pathlib as pl
+import pickle  # nosec
+import sys
 from email import encoders
-from pathlib import Path
-from dotenv import load_dotenv
-import pathlib
+from email.mime.base import MIMEBase
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
+from os import environ
 from apiclient import errors
-
+from dotenv import load_dotenv
+from fritzconnection import FritzConnection
+from google.auth.transport.requests import Request
+from google_auth_oauthlib.flow import InstalledAppFlow
+from googleapiclient.discovery import build
 
 print("Commencing ISP Toolkit ...")
 # Get path of the current dir under which the file is executed
@@ -38,14 +35,14 @@ dirname = os.path.dirname(os.path.abspath(__file__))
 sys.path.append(os.path.join(dirname))
 
 # Setup credential_dir
-CRED_DIR = pathlib.Path.cwd().joinpath(dirname, "..", "creds")
+CRED_DIR = pl.Path.cwd().joinpath(dirname, "..", "creds")
 
 """
 Block of code to process the ingestion of environmental
 variables
 """
 # Get path to where environmental variables are stored and
-env_path = pathlib.Path.cwd().joinpath(CRED_DIR, ".env")
+env_path = pl.Path.cwd().joinpath(CRED_DIR, ".env")
 # NOTE: This has been set to always revert to system provided environmental
 # variables, rather than what is provided in the .env file using
 # the override=False method.
@@ -195,6 +192,7 @@ def process_logs(logs):
 
 # Gmail notification block
 
+
 def authorise_gmail_service():
     """
     Authorise and establish connection
@@ -219,7 +217,7 @@ def authorise_gmail_service():
     # time.
     if os.path.exists(os.path.join(CRED_DIR, "token.pickle")):
         with open(os.path.join(CRED_DIR, "token.pickle"), "rb") as token:
-            creds = pickle.load(token)
+            creds = pickle.load(token)  # nosec
     # If there are no (valid) credentials available, let the user log in.
     # to generate more credentials.
     if not creds or not creds.valid:
@@ -250,7 +248,7 @@ def create_email_with_attachment(to, subject, message_text, file_list):
         for sending emails.
         message_text: The body of the message to be sent.
         file_list: A list of files to be attached to the email.
-    
+
     Raises:
         N/A
 
@@ -281,7 +279,6 @@ def create_email_with_attachment(to, subject, message_text, file_list):
     # Format message dictionary, ready for sending
     message = {"raw": base64.urlsafe_b64encode(mimeMessage.as_bytes()).decode()}
     return message
-
 
 
 def send_message(service, user_id, message):
@@ -354,6 +351,7 @@ def process_isp_logs():
 
 # Main workflow
 
+
 def main(gmail=True):
     """
     Main workflow of the script.
@@ -389,4 +387,3 @@ def main(gmail=True):
 
 if __name__ == "__main__":
     main()
-
