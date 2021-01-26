@@ -17,8 +17,8 @@ the notification to whatever tool you like.
 The tool ingests environmental variables for authentication to the Fritz ISP router. These are:
 
 - ISP_RTR_UNAME = your_username
-- ISP_RTR_PWORD= your_password
-- ISP_RTR_ADDRESS= your_isp_router_ip
+- ISP_RTR_PWORD = your_password
+- ISP_RTR_ADDRESS = your_isp_router_ip
 
 The tool will prefer environmental variables in the following order:
 
