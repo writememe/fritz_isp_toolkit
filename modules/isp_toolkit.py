@@ -1,6 +1,10 @@
 #!/usr/bin/env python3
 """
 Toolkit to manage Fritz Internet Router
+to parse it's device logs and send notifications
+via Gmail.
+
+You can use something else to send the Gmail notification.
 """
 # Import modules
 import os
@@ -23,6 +27,7 @@ from email import encoders
 from pathlib import Path
 from dotenv import load_dotenv
 import pathlib
+from apiclient import errors
 
 
 print("Commencing ISP Toolkit ...")
@@ -69,8 +74,8 @@ isp_pword = environ.get("ISP_RTR_PWORD")
 isp_address = environ.get("ISP_RTR_ADDRESS")
 
 # Gmail API scopes
-# NOTE: If modifying these scopes, delete the file token.pickle from within the CRED_DIR
-# directory
+# NOTE: If modifying these scopes, delete the file token.pickle
+# from within the CRED_DIR directory
 SCOPES = [
     "https://www.googleapis.com/auth/gmail.send",  # Only need this scope to send email
 ]
@@ -158,148 +163,230 @@ def retrieve_logs(fc):
 
 
 def process_logs(logs):
-    """"""
-    # Grab the value out of the dictionary
+    """
+    Take the dictionary containing the log
+    entries and parse them to reformat the output
+    into a more human readable list of logs.
+
+    Args:
+    logs (dict): A single key/value dictionary containing the logs.
+        Example:
+                {
+                    'NewDeviceLog': 'log1date log1subject: log1detail\n log2date log2subject: log12detail'
+                }
+
+    Raises:
+        N/A
+
+    Returns:
+        log_list: A list of logs
+    """
+    # Grab the single value out of the dictionary, put it through
+    # a list, then string it so we can work with it
+    # NOTE: This isn't great.
     log_data = str(list(logs.values()))
-    for item in logs.items():
-        print(str(item) + "\n")
-    print(f"LOG DATA: {log_data}")
-    print(type(log_data))
+    # Each log entry is seperated by a newline character
+    # so we split on this to get the list of logs.
     log_list = log_data.split("\\n")
-    print("*" * 50)
-    print(log_list)
-    print("*" * 50)
-    for item in log_list:
-        print(f"Log Entry: {item}")
-    print(type(log_list))
+    # Debug print
+    print(f"Final log list: {log_list}")
     return log_list
 
 
-# Gmail notification
+# Gmail notification block
+
+def authorise_gmail_service():
+    """
+    Authorise and establish connection
+    to the Gmail service so that operations
+    can be performed against the Gmail API.
 
 
-def build_gmail_service():
-    """Shows basic usage of the Gmail API.
-    Lists the user's Gmail labels.
+    Args:
+        N/A
+
+    Raises:
+        N/A
+
+    Returns:
+        service: An established object with
+        access to the Gmail API
+
     """
     creds = None
     # The file token.pickle stores the user's access and refresh tokens, and is
     # created automatically when the authorization flow completes for the first
     # time.
-    if os.path.exists("token.pickle"):
-        with open("token.pickle", "rb") as token:
+    if os.path.exists(os.path.join(CRED_DIR, "token.pickle")):
+        with open(os.path.join(CRED_DIR, "token.pickle"), "rb") as token:
             creds = pickle.load(token)
     # If there are no (valid) credentials available, let the user log in.
+    # to generate more credentials.
     if not creds or not creds.valid:
         if creds and creds.expired and creds.refresh_token:
             creds.refresh(Request())
         else:
             flow = InstalledAppFlow.from_client_secrets_file(
-                "credentials_home_automation.json", SCOPES
+                os.path.join(CRED_DIR, "credentials_home_automation.json"), SCOPES
             )
             creds = flow.run_local_server(port=0)
-        # Save the credentials for the next run
-        with open("token.pickle", "wb") as token:
+        # Save the credentials for the next run into the CRED_DIR
+        with open(os.path.join(CRED_DIR, "token.pickle"), "wb") as token:
             pickle.dump(creds, token)
-
+    # Create the resource which will be used against the Gmail API
     service = build("gmail", "v1", credentials=creds)
     return service
 
 
-def send_email_with_attachment(sender, to, subject, service, message_text, file_list):
+def create_email_with_attachment(to, subject, message_text, file_list):
     """
-    Working function, leave as is
+    Send an email using the Gmail API with one or more attachments.
+
+    Args:
+        to: The to recipient of the email.
+            Example: johndoe@gmail.com
+        subject: The subject of the email.
+        service: An established object with authorised access to the Gmail API
+        for sending emails.
+        message_text: The body of the message to be sent.
+        file_list: A list of files to be attached to the email.
+    
+    Raises:
+        N/A
+
+    Returns:
+        message: A message in the proper format, ready to be sent
+        by the send_email function.
     """
 
-    # create email message
+    # Create an email message
     mimeMessage = MIMEMultipart()
     mimeMessage["to"] = to
     mimeMessage["subject"] = subject
     mimeMessage.attach(MIMEText(message_text, "plain"))
 
-    # Attach files
+    # Attach files from the list of files
     for attachment in file_list:
         content_type, encoding = mimetypes.guess_type(attachment)
         main_type, sub_type = content_type.split("/", 1)
         file_name = os.path.basename(attachment)
         f = open(attachment, "rb")
-        myFile = MIMEBase(main_type, sub_type)
-        myFile.set_payload(f.read())
-        myFile.add_header("Content-Disposition", "attachment", filename=file_name)
-        encoders.encode_base64(myFile)
+        my_file = MIMEBase(main_type, sub_type)
+        my_file.set_payload(f.read())
+        my_file.add_header("Content-Disposition", "attachment", filename=file_name)
+        encoders.encode_base64(my_file)
         f.close()
-        mimeMessage.attach(myFile)
+        mimeMessage.attach(my_file)
 
-    raw_string = base64.urlsafe_b64encode(mimeMessage.as_bytes()).decode()
-    message = (
-        service.users().messages().send(userId="me", body={"raw": raw_string}).execute()
-    )
-    print(message)
+    # Format message dictionary, ready for sending
+    message = {"raw": base64.urlsafe_b64encode(mimeMessage.as_bytes()).decode()}
+    return message
+
+
+
+def send_message(service, user_id, message):
+    """
+    Send an email message.
+
+    Args:
+        service: Authorized Gmail API service instance.
+        user_id: User's email address. The special value "me"
+        can be used to indicate the authenticated user.
+        message: Message to be sent.
+
+    Returns:
+        Sent Message.
+    """
+    try:
+        message = (
+            service.users().messages().send(userId=user_id, body=message).execute()
+        )
+        message_id = message["id"]
+        print(f"Message Sent - Message ID: {message_id}")
+        return message
+    except errors.HttpError as err:
+        print(f"An error occurred: {err}")
 
 
 def process_isp_logs():
+    """
+    Function to join together multiple operations
+    related to the Fritz ISP Router portion of the
+    script.
+
+    Args:
+        N/A
+
+    Raises:
+        N/A
+
+    Returns:
+        log_file: The log_file containing the Fritz ISP router
+        logs, ready for further processing.
+        timestamp: A string formatted timestamp for usage for the
+        notification component of the main workflow.
+
+    """
+    # Get timestamp and assign to a variable.
     timestamp = get_timestamp()
-    output_dir = create_log_dir(log_dir="logs")
+    # Create a logs directory to save the results into.
+    log_dir = os.path.join(dirname, "..", "logs")
+    output_dir = create_log_dir(log_dir=log_dir)
+    # Initialise connection to Fritz ISP Router
     fc = initialise_connection(isp_address, isp_uname, isp_pword)
+    # Retrieve and parse logs from Fritz ISP Router
     logs = retrieve_logs(fc)
     log_list = process_logs(logs)
-    sum_log_file_name = f"{output_dir}/{timestamp}-log_stats.txt"
-    with open(f"{sum_log_file_name}", "w") as s_log_file:
-        for line in log_list:
-            line = line.lstrip("['").rstrip("']")
-            s_log_file.write(line + "\n")
-    return sum_log_file_name, timestamp
+    # Auto-generate log_file variable, using timestamp and output_dir
+    log_file = f"{output_dir}/{timestamp}-log_stats.txt"
+    # Open file for writing
+    with open(f"{log_file}", "w") as summary_log_file:
+        # Iterate over log_entries in log_list
+        for log_entry in log_list:
+            # Right-strip and left-strip any trailing string
+            # elements left from the original dictionary.
+            # NOTE: This isn't great, but works.
+            log_entry = log_entry.lstrip("['").rstrip("']")
+            # Write the log entry to the file.
+            summary_log_file.write(log_entry + "\n")
+    return log_file, timestamp
 
 
-def main():
+# Main workflow
+
+def main(gmail=True):
+    """
+    Main workflow of the script.
+
+    NOTE: Gmail is used as the "notification" engine,
+    but there is nothing stopping you using something else.
+
+    Args:
+        gmail: Boolean to toggle gmail notification on/off
+    """
+    # Connect to Fritz ISP Router and process the logs
     data = process_isp_logs()
+    # Assign the log_file returned from the tuple to a variable
     log_file = data[0]
+    # Assign the timestamp returned from the tuple to a variable
     timestamp = data[1]
-    file_list = [log_file]
-    message_body = f"Attached is the log file {log_file}."
-    # service = build_gmail_service()
-    # # Working send email with attachment function
-    # email = send_email_with_attachment(
-    #     sender="danielfjteycheney@gmail.com",
-    #     to="danielfjteycheney@gmail.com",
-    #     subject=f"ISP Log File Report - {timestamp}",
-    #     service=service,
-    #     message_text=message_body,
-    #     file_list=file_list,
-    # )
-    # print(email)
+    # If gmail is enabled, send email using gmail with an attachment
+    if gmail:
+        # Create list of files to be attached to email
+        file_list = [log_file]
+        # Authorise to the gmail service
+        service = authorise_gmail_service()
+        # Create email with attachment function
+        message = create_email_with_attachment(
+            to="danielfjteycheney@gmail.com",
+            subject=f"ISP Log File Report - {timestamp}",
+            message_text=f"Attached is the log file {log_file}.",
+            file_list=file_list,
+        )
+        # Send the email
+        send_message(service=service, user_id="me", message=message)
 
 
-main()
+if __name__ == "__main__":
+    main()
 
-
-# fc = FritzConnection(address="192.168.178.1", user=isp_uname, password=isp_pword)
-# state = fc.call_action("WLANConfiguration1", "GetInfo")
-# print(state)
-# something = fc.call_action("DeviceInfo:1", "GetDeviceLog")
-# for key, value in something.items():
-#     print(f"Key: {key}")
-#     print(f"Value: {value}")
-#     print("*" * 50)
-
-
-# something_44 = fc.call_action("DeviceInfo:1", "GetInfo")
-# for key, value in something_44.items():
-#     print("something_55")
-#     print(f"Key: {key}")
-#     print(f"Value: {value}")
-#     print("*" * 50)
-
-
-# something_2 = fc.call_action("WANPPPConnection1", "GetStatusInfo")
-# for key, value in something_2.items():
-#     print(f"Key: {key}")
-#     print(f"Value: {value}")
-#     print("*" * 50)
-
-# something_23 = fc.call_action("WANIPConn1", "GetStatusInfo")
-# for key, value in something_23.items():
-#     print(f"Key: {key}")
-#     print(f"Value: {value}")
-#     print("*" * 50)
-# print(something)
