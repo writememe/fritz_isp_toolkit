@@ -16,13 +16,13 @@ the notification to whatever tool you like.
 
 The tool ingests environmental variables for authentication to the Fritz ISP router. These are:
 
-- ISP_RTR_UNAME=<yourusername>
-- ISP_RTR_PWORD=<yourpassword>
-- ISP_RTR_ADDRESS=<yourisprouterip>
+- ISP_RTR_UNAME = your_username
+- ISP_RTR_PWORD= your_password
+- ISP_RTR_ADDRESS= your_isp_router_ip
 
 The tool will prefer environmental variables in the following order:
 
-1) Any environmental variables set `.env` file, inside the [creds/](.creds/) folder.
+1) Any environmental variables set `.env` file, inside the [creds/](creds/) folder.
 2) Any other method in which you would like to set the environmental variables by.
 
 ### Gmail API - Optional
