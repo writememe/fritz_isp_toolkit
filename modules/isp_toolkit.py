@@ -338,7 +338,7 @@ def process_isp_logs():
     logs = retrieve_logs(fc)
     log_list = process_logs(logs)
     # Auto-generate log_file variable, using timestamp and output_dir
-    log_file = f"{output_dir}/{timestamp}-log_stats.txt"
+    log_file = f"{output_dir}/{timestamp}-log-stats.txt"
     # Open file for writing
     with open(f"{log_file}", "w") as summary_log_file:
         # Iterate over log_entries in log_list

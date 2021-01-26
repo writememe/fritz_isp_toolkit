@@ -1,55 +1,62 @@
-# fritz_isp_toolkit
-A repository to interface with Fritz routers and send notifications via Gmail
+# Fritz ISP Router Toolkit
 
+A repository to interface with Fritz ISP routers and send notifications via Gmail
 
-## Sample Services
+## Introduction
+
+This tool uses the [fritzconnection](https://fritzconnection.readthedocs.io/en/1.4.0/index.html) python module to interface with the Fritz Router so that you can process the device logs off
+the device.
+
+From there, you have to option to send an email via the Gmail API. Realistically, you could swap out
+the notification to whatever tool you like.
+
+## Preparation
+
+### ISP Router - Environmental Variables
+
+The tool ingests environmental variables for authentication to the Fritz ISP router. These are:
+
+- ISP_RTR_UNAME=<yourusername>
+- ISP_RTR_PWORD=<yourpassword>
+- ISP_RTR_ADDRESS=<yourisprouterip>
+
+The tool will prefer environmental variables in the following order:
+
+1) Any environmental variables set `.env` file, inside the [creds/](.creds/) folder.
+2) Any other method in which you would like to set the environmental variables by.
+
+### Gmail API - Optional
+
+You will need to follow the [Gmail Python quickstart guide](https://developers.google.com/gmail/api/quickstart/python).  
+
+Then, copy the contents of the `credentials.json` file provided and save to a file
+called `credentials_home_automation.json` inside the [creds/](.creds/) folder.
+
+## Installation
+
+In order to use the application, please follow the installation instructions below:
+
+1. Create the virtual environment to run the application in:
+
+```bash
+virtualenv --python=`which python3` venv
+source venv/bin/activate
+```
+
+2. Install the requirements:
 
 ```python
-"""
-fritzconnection -i 192.168.178.1 -u uname -p 'pword' -s
-fritzconnection v1.4.0
-FRITZ!Box 7490 at http://192.168.178.1
-FRITZ!OS: 7.12
-
-Servicenames:
-                    any1
-                    WANCommonIFC1
-                    WANDSLLinkC1
-                    WANIPConn1
-                    WANIPv6Firewall1
-                    DeviceInfo1
-                    DeviceConfig1
-                    Layer3Forwarding1
-                    LANConfigSecurity1
-                    ManagementServer1
-                    Time1
-                    UserInterface1
-                    X_AVM-DE_Storage1
-                    X_AVM-DE_WebDAVClient1
-                    X_AVM-DE_UPnP1
-                    X_AVM-DE_Speedtest1
-                    X_AVM-DE_RemoteAccess1
-                    X_AVM-DE_MyFritz1
-                    X_VoIP1
-                    X_AVM-DE_OnTel1
-                    X_AVM-DE_Dect1
-                    X_AVM-DE_TAM1
-                    X_AVM-DE_AppSetup1
-                    X_AVM-DE_Homeauto1
-                    X_AVM-DE_Homeplug1
-                    X_AVM-DE_Filelinks1
-                    X_AVM-DE_Auth1
-                    WLANConfiguration1
-                    WLANConfiguration2
-                    WLANConfiguration3
-                    Hosts1
-                    LANEthernetInterfaceConfig1
-                    LANHostConfigManagement1
-                    WANCommonInterfaceConfig1
-                    WANDSLInterfaceConfig1
-                    WANDSLLinkConfig1
-                    WANEthernetLinkConfig1
-                    WANPPPConnection1
-                    WANIPConnection1
-"""
+pip install -r requirements.txt
 ```
+
+## Operating Instructions
+
+In order to operate the tool, please perform the following:
+
+```python
+
+python modules/isp_toolkit.py
+
+```
+
+This will output a timestamped log in the [logs](logs/README.md) folder.
