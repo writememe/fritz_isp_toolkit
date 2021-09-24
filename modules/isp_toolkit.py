@@ -13,21 +13,12 @@ from os import environ
 from fritzconnection import FritzConnection
 import pathlib as pl
 import datetime as dt
-import pickle
 import os.path
-from googleapiclient.discovery import build
-from google_auth_oauthlib.flow import InstalledAppFlow
-from google.auth.transport.requests import Request
-from email.mime.text import MIMEText
-from email.mime.multipart import MIMEMultipart
-import base64
-import mimetypes
-from email.mime.base import MIMEBase
-from email import encoders
 from pathlib import Path
 from dotenv import load_dotenv
 import pathlib
-from apiclient import errors
+import yagmail
+from typing import List
 
 
 print("Commencing ISP Toolkit ...")
@@ -58,6 +49,8 @@ environment_variables = [
     "ISP_RTR_UNAME",
     "ISP_RTR_PWORD",
     "ISP_RTR_ADDRESS",
+    "GMAIL_ACC",
+    "GMAIL_PWORD",
 ]
 # Iterate over environmental variables and ensure they are set,
 # if not exit the program.
@@ -72,16 +65,11 @@ for variables in environment_variables:
 isp_uname = environ.get("ISP_RTR_UNAME")
 isp_pword = environ.get("ISP_RTR_PWORD")
 isp_address = environ.get("ISP_RTR_ADDRESS")
-
-# Gmail API scopes
-# NOTE: If modifying these scopes, delete the file token.pickle
-# from within the CRED_DIR directory
-SCOPES = [
-    "https://www.googleapis.com/auth/gmail.send",  # Only need this scope to send email
-]
+gmail_acc = environ.get("GMAIL_ACC")
+gmail_pword = environ.get("GMAIL_PWORD")
 
 
-def get_timestamp():
+def get_timestamp() -> str:
     """
     Get the current time and convert into a timestamp for
     further usage
@@ -102,7 +90,7 @@ def get_timestamp():
     return timestamp
 
 
-def create_log_dir(log_dir="logs"):
+def create_log_dir(log_dir: str = "logs"):
     """
     Create log directory to store outputs.
 
@@ -162,7 +150,7 @@ def retrieve_logs(fc):
     return logs
 
 
-def process_logs(logs):
+def process_logs(logs: dict) -> List:
     """
     Take the dictionary containing the log
     entries and parse them to reformat the output
@@ -195,117 +183,26 @@ def process_logs(logs):
 
 # Gmail notification block
 
-def authorise_gmail_service():
-    """
-    Authorise and establish connection
-    to the Gmail service so that operations
-    can be performed against the Gmail API.
 
+def authorise_yagmail_client(
+    gmail_acc: str = gmail_acc, gmail_pword: str = gmail_pword
+):
+    """
+    Instantiate a connection to the yagmail client
+    and return for use in other functions.
 
     Args:
-        N/A
+        gmail_acc: The Gmail username used to login to your account.
+        gmail_pword: The Gmail password used to login to your account.
 
     Raises:
         N/A
 
     Returns:
-        service: An established object with
-        access to the Gmail API
-
+        yg: An instantiated object, ready for sending emails.
     """
-    creds = None
-    # The file token.pickle stores the user's access and refresh tokens, and is
-    # created automatically when the authorization flow completes for the first
-    # time.
-    if os.path.exists(os.path.join(CRED_DIR, "token.pickle")):
-        with open(os.path.join(CRED_DIR, "token.pickle"), "rb") as token:
-            creds = pickle.load(token)
-    # If there are no (valid) credentials available, let the user log in.
-    # to generate more credentials.
-    if not creds or not creds.valid:
-        if creds and creds.expired and creds.refresh_token:
-            creds.refresh(Request())
-        else:
-            flow = InstalledAppFlow.from_client_secrets_file(
-                os.path.join(CRED_DIR, "credentials_home_automation.json"), SCOPES
-            )
-            creds = flow.run_local_server(port=0)
-        # Save the credentials for the next run into the CRED_DIR
-        with open(os.path.join(CRED_DIR, "token.pickle"), "wb") as token:
-            pickle.dump(creds, token)
-    # Create the resource which will be used against the Gmail API
-    service = build("gmail", "v1", credentials=creds)
-    return service
-
-
-def create_email_with_attachment(to, subject, message_text, file_list):
-    """
-    Send an email using the Gmail API with one or more attachments.
-
-    Args:
-        to: The to recipient of the email.
-            Example: johndoe@gmail.com
-        subject: The subject of the email.
-        service: An established object with authorised access to the Gmail API
-        for sending emails.
-        message_text: The body of the message to be sent.
-        file_list: A list of files to be attached to the email.
-    
-    Raises:
-        N/A
-
-    Returns:
-        message: A message in the proper format, ready to be sent
-        by the send_email function.
-    """
-
-    # Create an email message
-    mimeMessage = MIMEMultipart()
-    mimeMessage["to"] = to
-    mimeMessage["subject"] = subject
-    mimeMessage.attach(MIMEText(message_text, "plain"))
-
-    # Attach files from the list of files
-    for attachment in file_list:
-        content_type, encoding = mimetypes.guess_type(attachment)
-        main_type, sub_type = content_type.split("/", 1)
-        file_name = os.path.basename(attachment)
-        f = open(attachment, "rb")
-        my_file = MIMEBase(main_type, sub_type)
-        my_file.set_payload(f.read())
-        my_file.add_header("Content-Disposition", "attachment", filename=file_name)
-        encoders.encode_base64(my_file)
-        f.close()
-        mimeMessage.attach(my_file)
-
-    # Format message dictionary, ready for sending
-    message = {"raw": base64.urlsafe_b64encode(mimeMessage.as_bytes()).decode()}
-    return message
-
-
-
-def send_message(service, user_id, message):
-    """
-    Send an email message.
-
-    Args:
-        service: Authorized Gmail API service instance.
-        user_id: User's email address. The special value "me"
-        can be used to indicate the authenticated user.
-        message: Message to be sent.
-
-    Returns:
-        Sent Message.
-    """
-    try:
-        message = (
-            service.users().messages().send(userId=user_id, body=message).execute()
-        )
-        message_id = message["id"]
-        print(f"Message Sent - Message ID: {message_id}")
-        return message
-    except errors.HttpError as err:
-        print(f"An error occurred: {err}")
+    yg = yagmail.SMTP(gmail_acc, gmail_pword)
+    return yg
 
 
 def process_isp_logs():
@@ -354,15 +251,10 @@ def process_isp_logs():
 
 # Main workflow
 
-def main(gmail=True):
+
+def main(yagmail=True):
     """
-    Main workflow of the script.
-
-    NOTE: Gmail is used as the "notification" engine,
-    but there is nothing stopping you using something else.
-
-    Args:
-        gmail: Boolean to toggle gmail notification on/off
+    Main workflow for the application.
     """
     # Connect to Fritz ISP Router and process the logs
     data = process_isp_logs()
@@ -370,23 +262,21 @@ def main(gmail=True):
     log_file = data[0]
     # Assign the timestamp returned from the tuple to a variable
     timestamp = data[1]
-    # If gmail is enabled, send email using gmail with an attachment
-    if gmail:
+    if yagmail:
+        # Initialise the yagmail client so we can send the email
+        yag = authorise_yagmail_client(gmail_acc, gmail_pword)
         # Create list of files to be attached to email
         file_list = [log_file]
-        # Authorise to the gmail service
-        service = authorise_gmail_service()
-        # Create email with attachment function
-        message = create_email_with_attachment(
+        email_body = f"Attached is the log file {log_file}."
+        # Send the email
+        email_result = yag.send(
             to="danielfjteycheney@gmail.com",
             subject=f"ISP Log File Report - {timestamp}",
-            message_text=f"Attached is the log file {log_file}.",
-            file_list=file_list,
+            contents=[email_body],
+            attachments=file_list,
         )
-        # Send the email
-        send_message(service=service, user_id="me", message=message)
+        print(f"Result of email: {email_result}")
 
 
 if __name__ == "__main__":
     main()
-
