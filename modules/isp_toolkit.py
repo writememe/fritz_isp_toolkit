@@ -14,7 +14,6 @@ from fritzconnection import FritzConnection
 import pathlib as pl
 import datetime as dt
 import os.path
-from pathlib import Path
 from dotenv import load_dotenv
 import pathlib
 import yagmail
@@ -42,6 +41,9 @@ env_path = pathlib.Path.cwd().joinpath(CRED_DIR, ".env")
 # the override=False method.
 # If nothing is set on the system, the values from the .env file are used.
 load_dotenv(dotenv_path=env_path, override=True)
+# Specify todays and yesterdays date as global variables
+TODAY = dt.datetime.today()
+YESTERDAY = TODAY - dt.timedelta(days=1)
 
 # Specify a list of environmental variables
 # for usage inside script
@@ -85,9 +87,7 @@ def get_timestamp() -> str:
     """
     # Capture time
     cur_time = dt.datetime.now()
-    # Cleanup time, so that the format is clean for the output file 2019-07-01-13-04-59
-    timestamp = cur_time.strftime("%Y-%m-%d-%H-%M-%S")
-    return timestamp
+    return cur_time.strftime("%Y-%m-%d-%H-%M-%S")
 
 
 def create_log_dir(log_dir: str = "logs"):
@@ -173,12 +173,40 @@ def process_logs(logs: dict) -> List:
     # a list, then string it so we can work with it
     # NOTE: This isn't great.
     log_data = str(list(logs.values()))
+    log_data = log_data.lstrip("['").rstrip("']")
     # Each log entry is seperated by a newline character
     # so we split on this to get the list of logs.
     log_list = log_data.split("\\n")
     # Debug print
-    print(f"Final log list: {log_list}")
+    print(f"Total logs discovered: {len(log_list)}")
     return log_list
+
+
+def process_log_entry(log_entry):
+    # Set alert boolean to False by default
+    alert = False
+    # Define a list of strings which indicate alerts of concern, and
+    # not the usual "noise" of Wireless alerts
+    alert_strings = [
+        "Internet connection established successfully. IP address:",  # Indicates that Internet re-established
+        "PPPoE error:",  # PPPoE issues
+    ]
+    # Check if any of the log strings contain the alert substrings. This validates the the log
+    # entry has an alert string of interest in it.
+    if any(substring in log_entry for substring in alert_strings):
+        # NOTE: We are stripping the timestamp and converting to a datetime
+        # object for comparison
+        # '25.09.21 06:38:09 <some log message>'
+        log_entry_time_string = log_entry[:17]
+        log_entry_timestamp = dt.datetime.strptime(
+            log_entry_time_string, "%d.%m.%y %H:%M:%S"
+        )
+        # If the log entry date, is also greater than yesterdays time, this means it's a "new alert"
+        # and we are interesting in knowing this alert
+        if log_entry_timestamp > YESTERDAY:
+            # Set the alert boolean to True, so it can be used outside this function.
+            alert = True
+    return alert
 
 
 # Gmail notification block
@@ -222,8 +250,12 @@ def process_isp_logs():
         logs, ready for further processing.
         timestamp: A string formatted timestamp for usage for the
         notification component of the main workflow.
+        alert: A boolean which indicates that there was an event worthy of sending an alert
 
     """
+    # Instantiate an alert counter, this will be incremented
+    # if there is an event of interest
+    alert_counter = 0
     # Get timestamp and assign to a variable.
     timestamp = get_timestamp()
     # Create a logs directory to save the results into.
@@ -244,9 +276,17 @@ def process_isp_logs():
             # elements left from the original dictionary.
             # NOTE: This isn't great, but works.
             log_entry = log_entry.lstrip("['").rstrip("']")
+            # Process log entry for interesting alert
+            alert_result = process_log_entry(log_entry)
+            # If an interesting log alert is found, increment the counter
+            if alert_result:
+                alert_counter += 1
             # Write the log entry to the file.
             summary_log_file.write(log_entry + "\n")
-    return log_file, timestamp
+    # If the alert
+    alert = alert_counter > 0
+    print(f"ALERT: {alert}")
+    return log_file, timestamp, alert
 
 
 # Main workflow
@@ -262,7 +302,9 @@ def main(yagmail=True):
     log_file = data[0]
     # Assign the timestamp returned from the tuple to a variable
     timestamp = data[1]
-    if yagmail:
+    # Assign the alert boolean from the tuple to a variable
+    alert = data[2]
+    if yagmail and alert:
         # Initialise the yagmail client so we can send the email
         yag = authorise_yagmail_client(gmail_acc, gmail_pword)
         # Create list of files to be attached to email
@@ -276,6 +318,8 @@ def main(yagmail=True):
             attachments=file_list,
         )
         print(f"Result of email: {email_result}")
+    else:
+        print("Logs parsed, no new alerts")
 
 
 if __name__ == "__main__":
