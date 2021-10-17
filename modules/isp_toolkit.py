@@ -123,9 +123,7 @@ def initialise_connection(isp_address: str, isp_uname: str, isp_pword: str):
     """
     # Informational printout
     print(f"Initialising connection to: {isp_address}")
-    # Initialise connection to Fritz Routers
-    fc = FritzConnection(address=isp_address, user=isp_uname, password=isp_pword)
-    return fc
+    return FritzConnection(address=isp_address, user=isp_uname, password=isp_pword)
 
 
 def retrieve_logs(fc):
@@ -143,9 +141,7 @@ def retrieve_logs(fc):
                      'NewDeviceLog': 'log1date log1subject: log1detail\n log2date log2subject: log12detail'
                  }
     """
-    # Retrieve the raw logs from the Fritz ISP Router
-    logs = fc.call_action("DeviceInfo:1", "GetDeviceLog")
-    return logs
+    return fc.call_action("DeviceInfo:1", "GetDeviceLog")
 
 
 def process_logs(logs: dict) -> List:
@@ -227,8 +223,7 @@ def authorise_yagmail_client(
     Returns:
         yg: An instantiated object, ready for sending emails.
     """
-    yg = yagmail.SMTP(gmail_acc, gmail_pword)
-    return yg
+    return yagmail.SMTP(gmail_acc, gmail_pword)
 
 
 def process_isp_logs():
