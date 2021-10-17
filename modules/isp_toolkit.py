@@ -7,26 +7,15 @@ via Gmail.
 You can use something else to send the Gmail notification.
 """
 # Import modules
-import base64
 import datetime as dt
-import mimetypes
 import os
 import os.path
 import pathlib as pl
-import pickle  # nosec
 import sys
-from email import encoders
-from email.mime.base import MIMEBase
-from email.mime.multipart import MIMEMultipart
-from email.mime.text import MIMEText
 from os import environ
-from apiclient import errors
 from dotenv import load_dotenv
 from fritzconnection import FritzConnection
-import pathlib as pl
-import datetime as dt
 import os.path
-from dotenv import load_dotenv
 import pathlib
 import yagmail
 from typing import List
