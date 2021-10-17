@@ -7,25 +7,16 @@ via Gmail.
 You can use something else to send the Gmail notification.
 """
 # Import modules
-import base64
 import datetime as dt
-import mimetypes
 import os
 import os.path
 import pathlib as pl
-import pickle  # nosec
 import sys
-from email import encoders
-from email.mime.base import MIMEBase
-from email.mime.multipart import MIMEMultipart
-from email.mime.text import MIMEText
 from os import environ
-from apiclient import errors
 from dotenv import load_dotenv
 from fritzconnection import FritzConnection
-from google.auth.transport.requests import Request
-from google_auth_oauthlib.flow import InstalledAppFlow
-from googleapiclient.discovery import build
+import yagmail
+from typing import List
 
 print("Commencing ISP Toolkit ...")
 # Get path of the current dir under which the file is executed
@@ -48,6 +39,9 @@ env_path = pl.Path.cwd().joinpath(CRED_DIR, ".env")
 # the override=False method.
 # If nothing is set on the system, the values from the .env file are used.
 load_dotenv(dotenv_path=env_path, override=True)
+# Specify todays and yesterdays date as global variables
+TODAY = dt.datetime.today()
+YESTERDAY = TODAY - dt.timedelta(days=1)
 
 # Specify a list of environmental variables
 # for usage inside script
@@ -55,6 +49,8 @@ environment_variables = [
     "ISP_RTR_UNAME",
     "ISP_RTR_PWORD",
     "ISP_RTR_ADDRESS",
+    "GMAIL_ACC",
+    "GMAIL_PWORD",
 ]
 # Iterate over environmental variables and ensure they are set,
 # if not exit the program.
@@ -69,16 +65,11 @@ for variables in environment_variables:
 isp_uname = environ.get("ISP_RTR_UNAME")
 isp_pword = environ.get("ISP_RTR_PWORD")
 isp_address = environ.get("ISP_RTR_ADDRESS")
-
-# Gmail API scopes
-# NOTE: If modifying these scopes, delete the file token.pickle
-# from within the CRED_DIR directory
-SCOPES = [
-    "https://www.googleapis.com/auth/gmail.send",  # Only need this scope to send email
-]
+gmail_acc = environ.get("GMAIL_ACC")
+gmail_pword = environ.get("GMAIL_PWORD")
 
 
-def get_timestamp():
+def get_timestamp() -> str:
     """
     Get the current time and convert into a timestamp for
     further usage
@@ -94,12 +85,10 @@ def get_timestamp():
     """
     # Capture time
     cur_time = dt.datetime.now()
-    # Cleanup time, so that the format is clean for the output file 2019-07-01-13-04-59
-    timestamp = cur_time.strftime("%Y-%m-%d-%H-%M-%S")
-    return timestamp
+    return cur_time.strftime("%Y-%m-%d-%H-%M-%S")
 
 
-def create_log_dir(log_dir="logs"):
+def create_log_dir(log_dir: str = "logs"):
     """
     Create log directory to store outputs.
 
@@ -159,7 +148,7 @@ def retrieve_logs(fc):
     return logs
 
 
-def process_logs(logs):
+def process_logs(logs: dict) -> List:
     """
     Take the dictionary containing the log
     entries and parse them to reformat the output
@@ -182,127 +171,64 @@ def process_logs(logs):
     # a list, then string it so we can work with it
     # NOTE: This isn't great.
     log_data = str(list(logs.values()))
+    log_data = log_data.lstrip("['").rstrip("']")
     # Each log entry is seperated by a newline character
     # so we split on this to get the list of logs.
     log_list = log_data.split("\\n")
     # Debug print
-    print(f"Final log list: {log_list}")
+    print(f"Total logs discovered: {len(log_list)}")
     return log_list
+
+
+def process_log_entry(log_entry):
+    # Set alert boolean to False by default
+    alert = False
+    # Define a list of strings which indicate alerts of concern, and
+    # not the usual "noise" of Wireless alerts
+    alert_strings = [
+        "Internet connection established successfully. IP address:",  # Indicates that Internet re-established
+        "PPPoE error:",  # PPPoE issues
+    ]
+    # Check if any of the log strings contain the alert substrings. This validates the the log
+    # entry has an alert string of interest in it.
+    if any(substring in log_entry for substring in alert_strings):
+        # NOTE: We are stripping the timestamp and converting to a datetime
+        # object for comparison
+        # '25.09.21 06:38:09 <some log message>'
+        log_entry_time_string = log_entry[:17]
+        log_entry_timestamp = dt.datetime.strptime(
+            log_entry_time_string, "%d.%m.%y %H:%M:%S"
+        )
+        # If the log entry date, is also greater than yesterdays time, this means it's a "new alert"
+        # and we are interesting in knowing this alert
+        if log_entry_timestamp > YESTERDAY:
+            # Set the alert boolean to True, so it can be used outside this function.
+            alert = True
+    return alert
 
 
 # Gmail notification block
 
 
-def authorise_gmail_service():
+def authorise_yagmail_client(
+    gmail_acc: str = gmail_acc, gmail_pword: str = gmail_pword
+):
     """
-    Authorise and establish connection
-    to the Gmail service so that operations
-    can be performed against the Gmail API.
-
+    Instantiate a connection to the yagmail client
+    and return for use in other functions.
 
     Args:
-        N/A
+        gmail_acc: The Gmail username used to login to your account.
+        gmail_pword: The Gmail password used to login to your account.
 
     Raises:
         N/A
 
     Returns:
-        service: An established object with
-        access to the Gmail API
-
+        yg: An instantiated object, ready for sending emails.
     """
-    creds = None
-    # The file token.pickle stores the user's access and refresh tokens, and is
-    # created automatically when the authorization flow completes for the first
-    # time.
-    if os.path.exists(os.path.join(CRED_DIR, "token.pickle")):
-        with open(os.path.join(CRED_DIR, "token.pickle"), "rb") as token:
-            creds = pickle.load(token)  # nosec
-    # If there are no (valid) credentials available, let the user log in.
-    # to generate more credentials.
-    if not creds or not creds.valid:
-        if creds and creds.expired and creds.refresh_token:
-            creds.refresh(Request())
-        else:
-            flow = InstalledAppFlow.from_client_secrets_file(
-                os.path.join(CRED_DIR, "credentials_home_automation.json"), SCOPES
-            )
-            creds = flow.run_local_server(port=0)
-        # Save the credentials for the next run into the CRED_DIR
-        with open(os.path.join(CRED_DIR, "token.pickle"), "wb") as token:
-            pickle.dump(creds, token)
-    # Create the resource which will be used against the Gmail API
-    service = build("gmail", "v1", credentials=creds)
-    return service
-
-
-def create_email_with_attachment(to, subject, message_text, file_list):
-    """
-    Send an email using the Gmail API with one or more attachments.
-
-    Args:
-        to: The to recipient of the email.
-            Example: johndoe@gmail.com
-        subject: The subject of the email.
-        service: An established object with authorised access to the Gmail API
-        for sending emails.
-        message_text: The body of the message to be sent.
-        file_list: A list of files to be attached to the email.
-
-    Raises:
-        N/A
-
-    Returns:
-        message: A message in the proper format, ready to be sent
-        by the send_email function.
-    """
-
-    # Create an email message
-    mimeMessage = MIMEMultipart()
-    mimeMessage["to"] = to
-    mimeMessage["subject"] = subject
-    mimeMessage.attach(MIMEText(message_text, "plain"))
-
-    # Attach files from the list of files
-    for attachment in file_list:
-        content_type, encoding = mimetypes.guess_type(attachment)
-        main_type, sub_type = content_type.split("/", 1)
-        file_name = os.path.basename(attachment)
-        f = open(attachment, "rb")
-        my_file = MIMEBase(main_type, sub_type)
-        my_file.set_payload(f.read())
-        my_file.add_header("Content-Disposition", "attachment", filename=file_name)
-        encoders.encode_base64(my_file)
-        f.close()
-        mimeMessage.attach(my_file)
-
-    # Format message dictionary, ready for sending
-    message = {"raw": base64.urlsafe_b64encode(mimeMessage.as_bytes()).decode()}
-    return message
-
-
-def send_message(service, user_id, message):
-    """
-    Send an email message.
-
-    Args:
-        service: Authorized Gmail API service instance.
-        user_id: User's email address. The special value "me"
-        can be used to indicate the authenticated user.
-        message: Message to be sent.
-
-    Returns:
-        Sent Message.
-    """
-    try:
-        message = (
-            service.users().messages().send(userId=user_id, body=message).execute()
-        )
-        message_id = message["id"]
-        print(f"Message Sent - Message ID: {message_id}")
-        return message
-    except errors.HttpError as err:
-        print(f"An error occurred: {err}")
+    yg = yagmail.SMTP(gmail_acc, gmail_pword)
+    return yg
 
 
 def process_isp_logs():
@@ -322,8 +248,12 @@ def process_isp_logs():
         logs, ready for further processing.
         timestamp: A string formatted timestamp for usage for the
         notification component of the main workflow.
+        alert: A boolean which indicates that there was an event worthy of sending an alert
 
     """
+    # Instantiate an alert counter, this will be incremented
+    # if there is an event of interest
+    alert_counter = 0
     # Get timestamp and assign to a variable.
     timestamp = get_timestamp()
     # Create a logs directory to save the results into.
@@ -344,23 +274,25 @@ def process_isp_logs():
             # elements left from the original dictionary.
             # NOTE: This isn't great, but works.
             log_entry = log_entry.lstrip("['").rstrip("']")
+            # Process log entry for interesting alert
+            alert_result = process_log_entry(log_entry)
+            # If an interesting log alert is found, increment the counter
+            if alert_result:
+                alert_counter += 1
             # Write the log entry to the file.
             summary_log_file.write(log_entry + "\n")
-    return log_file, timestamp
+    # If the alert
+    alert = alert_counter > 0
+    print(f"ALERT: {alert}")
+    return log_file, timestamp, alert
 
 
 # Main workflow
 
 
-def main(gmail=True):
+def main(yagmail=True):
     """
-    Main workflow of the script.
-
-    NOTE: Gmail is used as the "notification" engine,
-    but there is nothing stopping you using something else.
-
-    Args:
-        gmail: Boolean to toggle gmail notification on/off
+    Main workflow for the application.
     """
     # Connect to Fritz ISP Router and process the logs
     data = process_isp_logs()
@@ -368,21 +300,24 @@ def main(gmail=True):
     log_file = data[0]
     # Assign the timestamp returned from the tuple to a variable
     timestamp = data[1]
-    # If gmail is enabled, send email using gmail with an attachment
-    if gmail:
+    # Assign the alert boolean from the tuple to a variable
+    alert = data[2]
+    if yagmail and alert:
+        # Initialise the yagmail client so we can send the email
+        yag = authorise_yagmail_client(gmail_acc, gmail_pword)
         # Create list of files to be attached to email
         file_list = [log_file]
-        # Authorise to the gmail service
-        service = authorise_gmail_service()
-        # Create email with attachment function
-        message = create_email_with_attachment(
+        email_body = f"Attached is the log file {log_file}."
+        # Send the email
+        email_result = yag.send(
             to="danielfjteycheney@gmail.com",
             subject=f"ISP Log File Report - {timestamp}",
-            message_text=f"Attached is the log file {log_file}.",
-            file_list=file_list,
+            contents=[email_body],
+            attachments=file_list,
         )
-        # Send the email
-        send_message(service=service, user_id="me", message=message)
+        print(f"Result of email: {email_result}")
+    else:
+        print("Logs parsed, no new alerts")
 
 
 if __name__ == "__main__":
