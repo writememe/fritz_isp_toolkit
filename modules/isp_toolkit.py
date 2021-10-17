@@ -7,9 +7,21 @@ via Gmail.
 You can use something else to send the Gmail notification.
 """
 # Import modules
+import base64
+import datetime as dt
+import mimetypes
 import os
+import os.path
+import pathlib as pl
+import pickle  # nosec
 import sys
+from email import encoders
+from email.mime.base import MIMEBase
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
 from os import environ
+from apiclient import errors
+from dotenv import load_dotenv
 from fritzconnection import FritzConnection
 import pathlib as pl
 import datetime as dt
@@ -19,7 +31,6 @@ import pathlib
 import yagmail
 from typing import List
 
-
 print("Commencing ISP Toolkit ...")
 # Get path of the current dir under which the file is executed
 dirname = os.path.dirname(os.path.abspath(__file__))
@@ -28,14 +39,14 @@ dirname = os.path.dirname(os.path.abspath(__file__))
 sys.path.append(os.path.join(dirname))
 
 # Setup credential_dir
-CRED_DIR = pathlib.Path.cwd().joinpath(dirname, "..", "creds")
+CRED_DIR = pl.Path.cwd().joinpath(dirname, "..", "creds")
 
 """
 Block of code to process the ingestion of environmental
 variables
 """
 # Get path to where environmental variables are stored and
-env_path = pathlib.Path.cwd().joinpath(CRED_DIR, ".env")
+env_path = pl.Path.cwd().joinpath(CRED_DIR, ".env")
 # NOTE: This has been set to always revert to system provided environmental
 # variables, rather than what is provided in the .env file using
 # the override=False method.

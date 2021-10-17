@@ -1,3 +1,10 @@
+![fritz_isp_toolkit](https://github.com/writememe/fritz_isp_toolkit/workflows/fritz_isp_toolkit/badge.svg)
+[![Python 3.7](https://img.shields.io/badge/python-3.7-blue.svg)](https://www.python.org/downloads/release/python-370/)
+[![Python 3.8](https://img.shields.io/badge/python-3.8-blue.svg)](https://www.python.org/downloads/release/python-380/)
+[![Python 3.9](https://img.shields.io/badge/python-3.9-blue.svg)](https://www.python.org/downloads/release/python-390/)
+[![Code Style](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/ambv/black)
+
+
 # Fritz ISP Router Toolkit
 
 A repository to interface with Fritz ISP routers and send notifications via Gmail
@@ -16,13 +23,13 @@ the notification to whatever tool you like.
 
 The tool ingests environmental variables for authentication to the Fritz ISP router. These are:
 
-- ISP_RTR_UNAME=<yourusername>
-- ISP_RTR_PWORD=<yourpassword>
-- ISP_RTR_ADDRESS=<yourisprouterip>
+- `ISP_RTR_UNAME` = your_username
+- `ISP_RTR_PWORD` = your_password
+- `ISP_RTR_ADDRESS` = your_isp_router_ip
 
 The tool will prefer environmental variables in the following order:
 
-1) Any environmental variables set `.env` file, inside the [creds/](.creds/) folder.
+1) Any environmental variables set `.env` file, inside the [creds/](creds/) folder.
 2) Any other method in which you would like to set the environmental variables by.
 
 ### Gmail API - Optional
