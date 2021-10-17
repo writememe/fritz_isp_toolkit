@@ -15,8 +15,6 @@ import sys
 from os import environ
 from dotenv import load_dotenv
 from fritzconnection import FritzConnection
-import os.path
-import pathlib
 import yagmail
 from typing import List
 
